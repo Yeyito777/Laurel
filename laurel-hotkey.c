@@ -14,9 +14,35 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+#include <time.h>
 
 static Display *dpy;
+static FILE *logfp;
 static int running = 1;
+
+static void log_open(void) {
+	const char *home = getenv("HOME");
+	if (!home) return;
+	char path[512];
+	snprintf(path, sizeof(path), "%s/.local/share/laurel/laurel.log", home);
+	logfp = fopen(path, "a");
+	if (logfp) setvbuf(logfp, NULL, _IOLBF, 0);
+}
+
+static void log_event(const char *fmt, ...) {
+	if (!logfp) return;
+	time_t now = time(NULL);
+	struct tm *tm = localtime(&now);
+	char ts[32];
+	strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", tm);
+	fprintf(logfp, "[%s] ", ts);
+	va_list ap;
+	va_start(ap, fmt);
+	vfprintf(logfp, fmt, ap);
+	va_end(ap);
+	fputc('\n', logfp);
+}
 
 static void cleanup(int sig) {
 	(void)sig;
@@ -88,20 +114,36 @@ int main(int argc, char *argv[]) {
 	Window root = DefaultRootWindow(dpy);
 
 	grab(root, mod, code);
-	XSelectInput(dpy, root, KeyPressMask);
 
 	signal(SIGTERM, cleanup);
 	signal(SIGINT, cleanup);
+
+	log_open();
+	log_event("hotkey: started, grabbing %s+%s (keycode %d, mod 0x%x)",
+		modname, keyname, code, mod);
 
 	XEvent ev;
 	while (running) {
 		XNextEvent(dpy, &ev);
 		if (ev.type == KeyPress) {
+			log_event("hotkey: keypress keycode=%d state=0x%x serial=%lu time=%lu send_event=%d",
+				ev.xkey.keycode, ev.xkey.state, ev.xkey.serial,
+				ev.xkey.time, ev.xkey.send_event);
+			if (ev.xkey.keycode != code) {
+				log_event("hotkey: ignored (expected keycode %d)", code);
+				continue;
+			}
 			pid_t pid = read_pid(pidfile);
-			if (pid > 0)
-				kill(pid, SIGUSR1);
+			if (pid > 0) {
+				int ret = kill(pid, SIGUSR1);
+				log_event("hotkey: sent SIGUSR1 to pid %d (result=%d)", pid, ret);
+			} else {
+				log_event("hotkey: no valid pid in %s", pidfile);
+			}
 		}
 	}
+
+	log_event("hotkey: shutting down");
 
 	ungrab(root, mod, code);
 	XCloseDisplay(dpy);

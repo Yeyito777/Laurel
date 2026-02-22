@@ -12,6 +12,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG="${LAUREL_CONFIG:-${HOME}/.local/share/laurel/config.sh}"
 [ -f "$CONFIG" ] && . "$CONFIG"
 
+# Logging
+LAUREL_LOG="${HOME}/.local/share/laurel/laurel.log"
+log() { printf '[%s] clip: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LAUREL_LOG"; }
+PPID_CMD=""
+[ -f "/proc/$PPID/cmdline" ] && PPID_CMD="$(tr '\0' ' ' < /proc/$PPID/cmdline)"
+log "triggered file=$CLIP_FILE type=$CLIP_TYPE ppid=$PPID ppid_cmd='${PPID_CMD}'"
+
 CLIP_SERVER="${CLIP_SERVER:-kitsune}"
 CLIP_DIR="${CLIP_DIR:-/srv/clips}"
 CLIP_DOMAIN="${CLIP_DOMAIN:-clips.yeyito.dev}"
