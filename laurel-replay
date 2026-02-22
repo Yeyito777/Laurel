@@ -1,0 +1,129 @@
+#!/bin/sh
+# laurel-replay — control the GPU Screen Recorder replay buffer
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG="${LAUREL_CONFIG:-${HOME}/.local/share/laurel/config.sh}"
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+# Defaults if config missing
+BUFFER_DURATION="${BUFFER_DURATION:-60}"
+FPS="${FPS:-60}"
+CODEC="${CODEC:-auto}"
+AUDIO_SOURCE="${AUDIO_SOURCE:-default_output}"
+CAPTURE_TARGET="${CAPTURE_TARGET:-HDMI-1}"
+CLIP_TMP_DIR="${CLIP_TMP_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/laurel}"
+LAUREL_DIR="${LAUREL_DIR:-${HOME}/.local/share/laurel}"
+HOTKEY_KEY="${HOTKEY_KEY:-g}"
+HOTKEY_MOD="${HOTKEY_MOD:-super}"
+
+PIDFILE="${LAUREL_DIR}/replay.pid"
+HOTKEY_PIDFILE="${LAUREL_DIR}/hotkey.pid"
+CLIP_HOOK="$(command -v laurel-clip 2>/dev/null || echo "${SCRIPT_DIR}/laurel-clip")"
+
+get_pid() {
+    [ -f "$PIDFILE" ] && cat "$PIDFILE" || return 1
+}
+
+get_hotkey_pid() {
+    [ -f "$HOTKEY_PIDFILE" ] && cat "$HOTKEY_PIDFILE" || return 1
+}
+
+is_running() {
+    pid=$(get_pid) && kill -0 "$pid" 2>/dev/null
+}
+
+is_hotkey_running() {
+    pid=$(get_hotkey_pid) && kill -0 "$pid" 2>/dev/null
+}
+
+cmd_start() {
+    if is_running; then
+        echo "laurel: replay buffer already running (pid $(get_pid))"
+        return 1
+    fi
+
+    mkdir -p "$CLIP_TMP_DIR" "$LAUREL_DIR"
+
+    codec_flag=""
+    [ "$CODEC" != "auto" ] && codec_flag="-k $CODEC"
+
+    gpu-screen-recorder \
+        -w "$CAPTURE_TARGET" \
+        -f "$FPS" \
+        -r "$BUFFER_DURATION" \
+        -a "$AUDIO_SOURCE" \
+        -c mp4 \
+        $codec_flag \
+        -o "$CLIP_TMP_DIR" \
+        -sc "$CLIP_HOOK" &
+
+    echo $! > "$PIDFILE"
+    echo "laurel: replay buffer started (pid $!, ${BUFFER_DURATION}s buffer)"
+
+    HOTKEY_BIN="$(command -v laurel-hotkey 2>/dev/null || echo "${SCRIPT_DIR}/laurel-hotkey")"
+    if [ -x "$HOTKEY_BIN" ]; then
+        "$HOTKEY_BIN" "$PIDFILE" "$HOTKEY_KEY" "$HOTKEY_MOD" &
+        echo $! > "$HOTKEY_PIDFILE"
+        echo "laurel: hotkey listener started (${HOTKEY_MOD}+${HOTKEY_KEY})"
+    else
+        echo "laurel: warning — laurel-hotkey not found, hotkey disabled"
+    fi
+}
+
+cmd_stop() {
+    if ! is_running; then
+        echo "laurel: not running"
+        rm -f "$PIDFILE" "$HOTKEY_PIDFILE"
+        return 1
+    fi
+
+    if is_hotkey_running; then
+        hpid=$(get_hotkey_pid)
+        kill "$hpid" 2>/dev/null
+        rm -f "$HOTKEY_PIDFILE"
+        echo "laurel: hotkey listener stopped (pid $hpid)"
+    fi
+
+    pid=$(get_pid)
+    kill "$pid" 2>/dev/null
+    rm -f "$PIDFILE"
+    echo "laurel: stopped (pid $pid)"
+}
+
+cmd_save() {
+    if ! is_running; then
+        echo "laurel: not running — start with: laurel-replay start"
+        return 1
+    fi
+
+    kill -USR1 "$(get_pid)"
+}
+
+cmd_status() {
+    if is_running; then
+        echo "laurel: running (pid $(get_pid))"
+    else
+        echo "laurel: not running"
+        rm -f "$PIDFILE"
+    fi
+
+    if is_hotkey_running; then
+        echo "laurel: hotkey listener running (pid $(get_hotkey_pid))"
+    else
+        echo "laurel: hotkey listener not running"
+        rm -f "$HOTKEY_PIDFILE"
+    fi
+
+    is_running
+}
+
+case "${1:-}" in
+    start)  cmd_start ;;
+    stop)   cmd_stop ;;
+    save)   cmd_save ;;
+    status) cmd_status ;;
+    *)
+        echo "usage: laurel-replay {start|stop|save|status}"
+        exit 1
+        ;;
+esac
