@@ -5,6 +5,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_DIR="${HOME}/.local/bin"
 DATA_DIR="${HOME}/.local/share/laurel"
+CONF_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/laurel"
 SERVICE_DIR="${HOME}/.config/systemd/user"
 
 echo "==> Installing gpu-screen-recorder"
@@ -20,7 +21,11 @@ cp "${SCRIPT_DIR}/laurel-clip" "${BIN_DIR}/laurel-clip"
 cp "${SCRIPT_DIR}/laurel-hotkey" "${BIN_DIR}/laurel-hotkey"
 chmod +x "${BIN_DIR}/laurel-replay" "${BIN_DIR}/laurel-clip" "${BIN_DIR}/laurel-hotkey"
 
-echo "==> Installing config and template to ${DATA_DIR}"
+echo "==> Installing config to ${CONF_DIR}"
+mkdir -p "$CONF_DIR"
+cp "${SCRIPT_DIR}/config/"* "$CONF_DIR/"
+
+echo "==> Installing data to ${DATA_DIR}"
 mkdir -p "$DATA_DIR"
 cp "${SCRIPT_DIR}/config.sh" "${DATA_DIR}/config.sh"
 cp "${SCRIPT_DIR}/server/clip-template.html" "${DATA_DIR}/clip-template.html"

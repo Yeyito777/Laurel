@@ -18,6 +18,11 @@ CLIP_DOMAIN="${CLIP_DOMAIN:-clips.yeyito.dev}"
 NOTIFY_CMD="${NOTIFY_CMD:-notify-send}"
 LAUREL_DIR="${LAUREL_DIR:-${HOME}/.local/share/laurel}"
 CLIP_TEMPLATE="${CLIP_TEMPLATE:-${LAUREL_DIR}/clip-template.html}"
+LAUREL_CONF_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/laurel"
+CLIP_SOUND="${LAUREL_CONF_DIR}/clip.mp3"
+
+# Play clip sound (async so it doesn't block upload)
+[ -f "$CLIP_SOUND" ] && pw-play "$CLIP_SOUND" &
 
 # Generate unique slug
 SLUG="$(date +%Y%m%d-%H%M%S)-$(od -An -tx1 -N4 /dev/urandom | tr -d ' \n')"
