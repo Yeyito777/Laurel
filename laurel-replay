@@ -1,9 +1,12 @@
 #!/bin/sh
 # laurel-replay — control the GPU Screen Recorder replay buffer
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG="${LAUREL_CONFIG:-${HOME}/.local/share/laurel/config.sh}"
-[ -f "$CONFIG" ] && . "$CONFIG"
+# Config resolution: env var → user config → system config
+_conf_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/laurel"
+_config="${LAUREL_CONFIG:-}"
+[ -z "$_config" ] && [ -f "${_conf_dir}/config.sh" ] && _config="${_conf_dir}/config.sh"
+[ -z "$_config" ] && [ -f "/etc/laurel/config.sh" ] && _config="/etc/laurel/config.sh"
+[ -n "$_config" ] && . "$_config"
 
 # Defaults if config missing
 BUFFER_DURATION="${BUFFER_DURATION:-60}"
@@ -11,14 +14,17 @@ FPS="${FPS:-60}"
 CODEC="${CODEC:-auto}"
 AUDIO_SOURCE="${AUDIO_SOURCE:-default_output}"
 CAPTURE_TARGET="${CAPTURE_TARGET:-HDMI-1}"
-CLIP_TMP_DIR="${CLIP_TMP_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/laurel}"
-LAUREL_DIR="${LAUREL_DIR:-${HOME}/.local/share/laurel}"
 HOTKEY_KEY="${HOTKEY_KEY:-g}"
 HOTKEY_MOD="${HOTKEY_MOD:-super}"
 
-PIDFILE="${LAUREL_DIR}/replay.pid"
-HOTKEY_PIDFILE="${LAUREL_DIR}/hotkey.pid"
-CLIP_HOOK="$(command -v laurel-clip 2>/dev/null || echo "${SCRIPT_DIR}/laurel-clip")"
+# XDG-compliant paths
+CLIP_TMP_DIR="${XDG_CACHE_HOME:-${HOME}/.cache}/laurel"
+LAUREL_RUNTIME="${XDG_RUNTIME_DIR:-/tmp}/laurel"
+LAUREL_STATE="${XDG_STATE_HOME:-${HOME}/.local/state}/laurel"
+
+PIDFILE="${LAUREL_RUNTIME}/replay.pid"
+HOTKEY_PIDFILE="${LAUREL_RUNTIME}/hotkey.pid"
+CLIP_HOOK="$(command -v laurel-clip 2>/dev/null)"
 
 get_pid() {
     [ -f "$PIDFILE" ] && cat "$PIDFILE" || return 1
@@ -42,7 +48,7 @@ cmd_start() {
         return 1
     fi
 
-    mkdir -p "$CLIP_TMP_DIR" "$LAUREL_DIR"
+    mkdir -p "$CLIP_TMP_DIR" "$LAUREL_RUNTIME" "$LAUREL_STATE"
 
     codec_flag=""
     [ "$CODEC" != "auto" ] && codec_flag="-k $CODEC"
@@ -60,8 +66,8 @@ cmd_start() {
     echo $! > "$PIDFILE"
     echo "laurel: replay buffer started (pid $!, ${BUFFER_DURATION}s buffer)"
 
-    HOTKEY_BIN="$(command -v laurel-hotkey 2>/dev/null || echo "${SCRIPT_DIR}/laurel-hotkey")"
-    if [ -x "$HOTKEY_BIN" ]; then
+    HOTKEY_BIN="$(command -v laurel-hotkey 2>/dev/null)"
+    if [ -n "$HOTKEY_BIN" ] && [ -x "$HOTKEY_BIN" ]; then
         "$HOTKEY_BIN" "$PIDFILE" "$HOTKEY_KEY" "$HOTKEY_MOD" &
         echo $! > "$HOTKEY_PIDFILE"
         echo "laurel: hotkey listener started (${HOTKEY_MOD}+${HOTKEY_KEY})"

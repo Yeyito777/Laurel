@@ -8,28 +8,48 @@ CLIP_TYPE="$2"
 
 [ -z "$CLIP_FILE" ] && exit 1
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONFIG="${LAUREL_CONFIG:-${HOME}/.local/share/laurel/config.sh}"
-[ -f "$CONFIG" ] && . "$CONFIG"
+# Config resolution: env var → user config → system config
+_conf_dir="${XDG_CONFIG_HOME:-${HOME}/.config}/laurel"
+_config="${LAUREL_CONFIG:-}"
+[ -z "$_config" ] && [ -f "${_conf_dir}/config.sh" ] && _config="${_conf_dir}/config.sh"
+[ -z "$_config" ] && [ -f "/etc/laurel/config.sh" ] && _config="/etc/laurel/config.sh"
+[ -n "$_config" ] && . "$_config"
 
 # Logging
-LAUREL_LOG="${HOME}/.local/share/laurel/laurel.log"
+LAUREL_STATE="${XDG_STATE_HOME:-${HOME}/.local/state}/laurel"
+mkdir -p "$LAUREL_STATE"
+LAUREL_LOG="${LAUREL_STATE}/laurel.log"
 log() { printf '[%s] clip: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LAUREL_LOG"; }
+
 PPID_CMD=""
 [ -f "/proc/$PPID/cmdline" ] && PPID_CMD="$(tr '\0' ' ' < /proc/$PPID/cmdline)"
 log "triggered file=$CLIP_FILE type=$CLIP_TYPE ppid=$PPID ppid_cmd='${PPID_CMD}'"
 
-CLIP_SERVER="${CLIP_SERVER:-kitsune}"
+# Defaults
+CLIP_SERVER="${CLIP_SERVER:-}"
 CLIP_DIR="${CLIP_DIR:-/srv/clips}"
-CLIP_DOMAIN="${CLIP_DOMAIN:-clips.yeyito.dev}"
+CLIP_DOMAIN="${CLIP_DOMAIN:-}"
 NOTIFY_CMD="${NOTIFY_CMD:-notify-send}"
-LAUREL_DIR="${LAUREL_DIR:-${HOME}/.local/share/laurel}"
-CLIP_TEMPLATE="${CLIP_TEMPLATE:-${LAUREL_DIR}/clip-template.html}"
-LAUREL_CONF_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/laurel"
-CLIP_SOUND="${LAUREL_CONF_DIR}/clip.mp3"
+
+# Validate required settings
+if [ -z "$CLIP_SERVER" ] || [ -z "$CLIP_DOMAIN" ]; then
+    log "ERROR: CLIP_SERVER and CLIP_DOMAIN must be set in config"
+    ${NOTIFY_CMD} "Laurel error" "CLIP_SERVER and CLIP_DOMAIN not configured" 2>/dev/null
+    exit 1
+fi
+
+# Template resolution: user config → system share
+CLIP_TEMPLATE=""
+[ -f "${_conf_dir}/clip-template.html" ] && CLIP_TEMPLATE="${_conf_dir}/clip-template.html"
+[ -z "$CLIP_TEMPLATE" ] && CLIP_TEMPLATE="/usr/share/laurel/clip-template.html"
+
+# Clip sound resolution: user config → system share
+CLIP_SOUND=""
+[ -f "${_conf_dir}/clip.mp3" ] && CLIP_SOUND="${_conf_dir}/clip.mp3"
+[ -z "$CLIP_SOUND" ] && [ -f "/usr/share/laurel/clip.mp3" ] && CLIP_SOUND="/usr/share/laurel/clip.mp3"
 
 # Play clip sound (async so it doesn't block upload)
-[ -f "$CLIP_SOUND" ] && pw-play "$CLIP_SOUND" &
+[ -n "$CLIP_SOUND" ] && pw-play "$CLIP_SOUND" &
 
 # Generate unique slug
 SLUG="$(date +%Y%m%d-%H%M%S)-$(od -An -tx1 -N4 /dev/urandom | tr -d ' \n')"

@@ -4,9 +4,8 @@ After=graphical-session.target
 
 [Service]
 Type=forking
-ExecStart=%h/.local/bin/laurel-replay start
-ExecStop=%h/.local/bin/laurel-replay stop
-Environment=LAUREL_CONFIG=%h/.local/share/laurel/config.sh
+ExecStart=/usr/bin/laurel-replay start
+ExecStop=/usr/bin/laurel-replay stop
 Environment=DISPLAY=:0
 Restart=on-failure
 RestartSec=5

@@ -3,7 +3,7 @@
  * Usage: laurel-hotkey <pidfile> [key] [modifier]
  *   pidfile   — file containing the PID to send SIGUSR1 to
  *   key       — X key name for XStringToKeysym (default: g)
- *   modifier  — super, alt, ctrl, shift, or combos like super+shift (default: super)
+ *   modifier  — super, alt, ctrl, shift, none, or combos like super+shift (default: super)
  *
  * Compile: cc -o laurel-hotkey laurel-hotkey.c -lX11
  */
@@ -16,16 +16,23 @@
 #include <string.h>
 #include <stdarg.h>
 #include <time.h>
+#include <sys/stat.h>
 
 static Display *dpy;
 static FILE *logfp;
 static int running = 1;
 
 static void log_open(void) {
+	const char *state = getenv("XDG_STATE_HOME");
 	const char *home = getenv("HOME");
 	if (!home) return;
-	char path[512];
-	snprintf(path, sizeof(path), "%s/.local/share/laurel/laurel.log", home);
+	char dir[512], path[512];
+	if (state)
+		snprintf(dir, sizeof(dir), "%s/laurel", state);
+	else
+		snprintf(dir, sizeof(dir), "%s/.local/state/laurel", home);
+	mkdir(dir, 0755);
+	snprintf(path, sizeof(path), "%s/laurel.log", dir);
 	logfp = fopen(path, "a");
 	if (logfp) setvbuf(logfp, NULL, _IOLBF, 0);
 }

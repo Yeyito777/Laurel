@@ -1,5 +1,6 @@
 #!/bin/sh
-# Laurel configuration — all tunables in one place
+# Laurel configuration
+# Copy to ~/.config/laurel/config.sh and edit to match your setup.
 
 # Recording
 CAPTURE_TARGET=HDMI-1       # monitor name (run gpu-screen-recorder --list-capture-options)
@@ -9,20 +10,13 @@ CODEC=auto                  # auto, h264, hevc, av1 (auto picks best for your GP
 AUDIO_SOURCE=default_output # PipeWire/PulseAudio sink to capture
 
 # Hotkey
-HOTKEY_KEY=F9               # X key name (passed to XStringToKeysym)
-HOTKEY_MOD=none             # none, super, alt, ctrl, shift (combinable: super+shift)
+HOTKEY_KEY=g                # X key name (passed to XStringToKeysym)
+HOTKEY_MOD=super            # none, super, alt, ctrl, shift (combinable: super+shift)
 
-# Local paths
-CLIP_TMP_DIR="${XDG_CACHE_HOME:-${HOME}/.cache}/laurel"
-LAUREL_DIR="${HOME}/.local/share/laurel"
-
-# Server
-CLIP_SERVER=kitsune         # SSH alias from ~/.ssh/config
-CLIP_DIR=/srv/clips          # remote directory for clips
-CLIP_DOMAIN=clips.yeyito.dev
+# Server — REQUIRED: set these to your clip server
+CLIP_SERVER=""              # SSH alias from ~/.ssh/config
+CLIP_DIR=/srv/clips         # remote directory for clips
+CLIP_DOMAIN=""              # your clip domain (e.g. clips.example.com)
 
 # Notification
-NOTIFY_CMD=notify-send      # swap for your own (e.g. st-notify $$)
-
-# Template (resolved at install time, override if needed)
-CLIP_TEMPLATE="${LAUREL_DIR}/clip-template.html"
+NOTIFY_CMD=notify-send      # swap for your own (e.g. a custom script)
