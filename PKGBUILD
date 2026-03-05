@@ -14,6 +14,7 @@ optdepends=(
 makedepends=('git')
 provides=('laurel')
 conflicts=('laurel')
+install=laurel.install
 backup=('etc/laurel/config.sh')
 source=('git+https://github.com/Yeyito777/Laurel.git')
 sha256sums=('SKIP')
