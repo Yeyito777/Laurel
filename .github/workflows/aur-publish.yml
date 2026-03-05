@@ -30,6 +30,7 @@ jobs:
         run: |
           git config --global user.name "Yeyito"
           git config --global user.email "yeyito@yeyito.dev"
+          git config --global safe.directory '*'
 
       - name: Clone AUR repo
         env:
