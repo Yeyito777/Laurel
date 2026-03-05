@@ -175,37 +175,75 @@ cmd_setup() {
     # ── Step 3: Server ──
     say "3. Clip server"
     echo ""
-    dim "  you need a server running laurel-server with SSH access."
-    dim "  set up an SSH alias in ~/.ssh/config first."
+    printf "  ${BOLD}1)${RESET} I have my own server ${DIM}(I run laurel-server)${RESET}\n"
+    printf "  ${BOLD}2)${RESET} A friend's server ${DIM}(they gave me access)${RESET}\n"
     echo ""
 
-    ask "SSH alias (e.g. my-server):"
-    read -r clip_server
+    ask "choice [1]:"
+    read -r server_choice
+    server_choice="${server_choice:-1}"
+    echo ""
 
-    if [ -z "$clip_server" ]; then
-        err "server is required"
-        exit 1
-    fi
+    if [ "$server_choice" = "2" ]; then
+        # ── Friend's server: just ask for domain ──
+        ask "server URL (e.g. clips.example.com):"
+        read -r clip_domain
 
-    # Test SSH connection
-    printf "  testing SSH to ${BOLD}%s${RESET}..." "$clip_server"
-    if ssh -o ConnectTimeout=5 -o BatchMode=yes "$clip_server" "echo ok" </dev/null >/dev/null 2>&1; then
-        printf " ${GREEN}connected${RESET}\n"
+        if [ -z "$clip_domain" ]; then
+            err "URL is required"
+            exit 1
+        fi
+
+        # Use domain as SSH host too — the server admin should have given SSH access
+        clip_server="$clip_domain"
+
+        dim "  note: you need SSH access to upload clips."
+        dim "  ask the server admin to set up an account for you."
+        echo ""
+
+        # Test SSH connection
+        printf "  testing SSH to ${BOLD}%s${RESET}..." "$clip_server"
+        if ssh -o ConnectTimeout=5 -o BatchMode=yes "$clip_server" "echo ok" </dev/null >/dev/null 2>&1; then
+            printf " ${GREEN}connected${RESET}\n"
+        else
+            printf " ${RED}failed${RESET}\n"
+            dim "  you can set up SSH access later — clips won't upload until then."
+            ask "continue anyway? [y/N]:"
+            read -r cont
+            case "$cont" in y|Y) ;; *) exit 1 ;; esac
+        fi
     else
-        printf " ${RED}failed${RESET}\n"
-        err "can't connect to $clip_server — check your SSH config"
-        ask "continue anyway? [y/N]:"
-        read -r cont
-        case "$cont" in y|Y) ;; *) exit 1 ;; esac
-    fi
+        # ── Own server: SSH alias + domain ──
+        dim "  enter the SSH alias from your ~/.ssh/config"
+        echo ""
+        ask "SSH alias (e.g. my-server):"
+        read -r clip_server
 
-    echo ""
-    ask "clip domain (e.g. clips.example.com):"
-    read -r clip_domain
+        if [ -z "$clip_server" ]; then
+            err "server is required"
+            exit 1
+        fi
 
-    if [ -z "$clip_domain" ]; then
-        err "domain is required"
-        exit 1
+        # Test SSH connection
+        printf "  testing SSH to ${BOLD}%s${RESET}..." "$clip_server"
+        if ssh -o ConnectTimeout=5 -o BatchMode=yes "$clip_server" "echo ok" </dev/null >/dev/null 2>&1; then
+            printf " ${GREEN}connected${RESET}\n"
+        else
+            printf " ${RED}failed${RESET}\n"
+            err "can't connect to $clip_server — check your SSH config"
+            ask "continue anyway? [y/N]:"
+            read -r cont
+            case "$cont" in y|Y) ;; *) exit 1 ;; esac
+        fi
+
+        echo ""
+        ask "clip domain (e.g. clips.example.com):"
+        read -r clip_domain
+
+        if [ -z "$clip_domain" ]; then
+            err "domain is required"
+            exit 1
+        fi
     fi
     ok "$clip_domain"
     echo ""
