@@ -368,14 +368,10 @@ case "${1:-}" in
         ;;
     status|"")
         if [ ! -f "$CONF_FILE" ]; then
-            echo ""
-            printf "  ${YELLOW}${BOLD}laurel${RESET}${YELLOW} is not configured yet.${RESET}\n"
-            echo ""
-            say "  run: laurel setup"
-            echo ""
-            exit 0
+            cmd_setup
+        else
+            cmd_status
         fi
-        cmd_status
         ;;
     *)
         echo "usage: laurel [setup|start|stop|pair|status]"
