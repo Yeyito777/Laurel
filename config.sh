@@ -7,6 +7,7 @@ CAPTURE_TARGET=HDMI-1       # monitor name (run gpu-screen-recorder --list-captu
 BUFFER_DURATION=60          # seconds of replay buffer
 FPS=60                      # recording framerate
 CODEC=auto                  # auto, h264, hevc, av1 (auto picks best for your GPU)
+ENCODER=auto                # auto (GPU with CPU fallback), cpu (force CPU encoding)
 AUDIO_SOURCE=default_output # PipeWire/PulseAudio sink to capture
 
 # Hotkey

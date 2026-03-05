@@ -149,6 +149,24 @@ cmd_setup() {
         exit 1
     fi
     ok "$CHOSEN_MON"
+
+    # Detect GPU encoding support
+    _has_gpu_encoder=false
+    # VA-API (AMD/Intel)
+    if ls /dev/dri/renderD* >/dev/null 2>&1; then
+        _has_gpu_encoder=true
+    fi
+    # NVENC (NVIDIA)
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        _has_gpu_encoder=true
+    fi
+
+    if [ "$_has_gpu_encoder" = "true" ]; then
+        encoder_setting="auto"
+    else
+        printf "  ${YELLOW}⚠${RESET} no hardware encoder detected — using CPU encoding ${DIM}(may use more resources)${RESET}\n"
+        encoder_setting="cpu"
+    fi
     echo ""
 
     # ── Step 2: Hotkey ──
@@ -276,6 +294,7 @@ CAPTURE_TARGET=$CHOSEN_MON
 BUFFER_DURATION=60
 FPS=60
 CODEC=auto
+ENCODER=$encoder_setting
 AUDIO_SOURCE=default_output
 
 # Hotkey

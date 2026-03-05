@@ -16,6 +16,7 @@ AUDIO_SOURCE="${AUDIO_SOURCE:-default_output}"
 CAPTURE_TARGET="${CAPTURE_TARGET:-HDMI-1}"
 HOTKEY_KEY="${HOTKEY_KEY:-g}"
 HOTKEY_MOD="${HOTKEY_MOD:-super}"
+ENCODER="${ENCODER:-auto}"
 
 # XDG-compliant paths
 CLIP_TMP_DIR="${XDG_CACHE_HOME:-${HOME}/.cache}/laurel"
@@ -53,6 +54,13 @@ cmd_start() {
     codec_flag=""
     [ "$CODEC" != "auto" ] && codec_flag="-k $CODEC"
 
+    encoder_flag=""
+    if [ "$ENCODER" = "cpu" ]; then
+        encoder_flag="-encoder cpu"
+    else
+        encoder_flag="-fallback-cpu-encoding yes"
+    fi
+
     gpu-screen-recorder \
         -w "$CAPTURE_TARGET" \
         -f "$FPS" \
@@ -60,6 +68,7 @@ cmd_start() {
         -a "$AUDIO_SOURCE" \
         -c mp4 \
         $codec_flag \
+        $encoder_flag \
         -o "$CLIP_TMP_DIR" \
         -sc "$CLIP_HOOK" &
 
