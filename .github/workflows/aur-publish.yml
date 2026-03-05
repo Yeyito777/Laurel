@@ -24,12 +24,8 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur_ed25519
           chmod 600 ~/.ssh/aur_ed25519
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
-          cat > ~/.ssh/config << EOF
-          Host aur.archlinux.org
-              IdentityFile ~/.ssh/aur_ed25519
-              User aur
-          EOF
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur_ed25519\n  User aur\n  StrictHostKeyChecking accept-new\n' > ~/.ssh/config
 
       - name: Configure git
         run: |
