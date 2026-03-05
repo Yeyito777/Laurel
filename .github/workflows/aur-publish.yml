@@ -16,7 +16,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: pacman -Syu --noconfirm git openssh
+        run: |
+          pacman -Syu --noconfirm git openssh
+          useradd -m builder
 
       - name: Set up AUR SSH key
         run: |
@@ -40,7 +42,8 @@ jobs:
         run: |
           cp PKGBUILD laurel.install /tmp/aur/
           cd /tmp/aur
-          makepkg --printsrcinfo > .SRCINFO
+          chown -R builder: .
+          su builder -c "makepkg --printsrcinfo" > .SRCINFO
           git add PKGBUILD .SRCINFO laurel.install
           if git diff --cached --quiet; then
             echo "No changes to publish"
