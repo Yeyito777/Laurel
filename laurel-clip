@@ -29,12 +29,27 @@ log "triggered file=$CLIP_FILE type=$CLIP_TYPE ppid=$PPID ppid_cmd='${PPID_CMD}'
 CLIP_SERVER="${CLIP_SERVER:-}"
 CLIP_DIR="${CLIP_DIR:-/srv/clips}"
 CLIP_DOMAIN="${CLIP_DOMAIN:-}"
+UPLOAD_MODE="${UPLOAD_MODE:-}"
 NOTIFY_CMD="${NOTIFY_CMD:-notify-send}"
 
-# Validate required settings
-if [ -z "$CLIP_SERVER" ] || [ -z "$CLIP_DOMAIN" ]; then
-    log "ERROR: CLIP_SERVER and CLIP_DOMAIN must be set in config"
-    ${NOTIFY_CMD} "Laurel error" "CLIP_SERVER and CLIP_DOMAIN not configured" 2>/dev/null
+# Determine upload mode: ssh (default if CLIP_SERVER looks like SSH) or http
+if [ -z "$UPLOAD_MODE" ]; then
+    if [ -n "$CLIP_SERVER" ]; then
+        UPLOAD_MODE="ssh"
+    elif [ -n "$CLIP_DOMAIN" ]; then
+        UPLOAD_MODE="http"
+    fi
+fi
+
+# Validate
+if [ -z "$CLIP_DOMAIN" ]; then
+    log "ERROR: CLIP_DOMAIN must be set in config"
+    ${NOTIFY_CMD} "Laurel error" "CLIP_DOMAIN not configured" 2>/dev/null
+    exit 1
+fi
+if [ "$UPLOAD_MODE" = "ssh" ] && [ -z "$CLIP_SERVER" ]; then
+    log "ERROR: CLIP_SERVER must be set for SSH upload mode"
+    ${NOTIFY_CMD} "Laurel error" "CLIP_SERVER not configured" 2>/dev/null
     exit 1
 fi
 
@@ -73,21 +88,42 @@ sed -e "s|{{SLUG}}|${SLUG}|g" \
     -e "s|{{URL}}|${URL}|g" \
     "$CLIP_TEMPLATE" > "$TMPHTML"
 
-# Upload clip and page to server
-ssh "$CLIP_SERVER" "mkdir -p '${CLIP_DIR}/${SLUG}'"
-scp -q "$CLIP_FILE" "${CLIP_SERVER}:${CLIP_DIR}/${SLUG}/${FILENAME}"
-scp -q "$TMPHTML" "${CLIP_SERVER}:${CLIP_DIR}/${SLUG}/index.html"
+if [ "$UPLOAD_MODE" = "ssh" ]; then
+    # ── SSH/SCP upload (original flow) ──
+    log "uploading via SSH to $CLIP_SERVER"
+    ssh "$CLIP_SERVER" "mkdir -p '${CLIP_DIR}/${SLUG}'"
+    scp -q "$CLIP_FILE" "${CLIP_SERVER}:${CLIP_DIR}/${SLUG}/${FILENAME}"
+    scp -q "$TMPHTML" "${CLIP_SERVER}:${CLIP_DIR}/${SLUG}/index.html"
+    ssh "$CLIP_SERVER" "printf '%s' '${IDENT}' > '${CLIP_DIR}/${SLUG}/.owner'"
+    ssh "$CLIP_SERVER" "chmod 644 '${CLIP_DIR}/${SLUG}'/*"
+    ssh "$CLIP_SERVER" "ffmpeg -y -i '${CLIP_DIR}/${SLUG}/${FILENAME}' -vframes 1 -q:v 2 '${CLIP_DIR}/${SLUG}/thumb.jpg' 2>/dev/null"
+else
+    # ── HTTP upload ──
+    log "uploading via HTTP to ${CLIP_DOMAIN}"
+
+    RESPONSE=$(curl -sf \
+        -X POST "https://${CLIP_DOMAIN}/api/upload" \
+        -H "X-Ident: ${IDENT}" \
+        -F "file=@${CLIP_FILE};filename=${FILENAME}" \
+        -F "slug=${SLUG}" \
+        -F "html=<${TMPHTML}" \
+        2>&1)
+
+    if [ $? -ne 0 ]; then
+        log "ERROR: HTTP upload failed: $RESPONSE"
+        ${NOTIFY_CMD} "Laurel error" "Upload failed" 2>/dev/null
+        rm -f "$TMPHTML"
+        exit 1
+    fi
+    log "upload response: $RESPONSE"
+fi
+
 rm -f "$TMPHTML"
-# Stamp ownership
-ssh "$CLIP_SERVER" "printf '%s' '${IDENT}' > '${CLIP_DIR}/${SLUG}/.owner'"
-
-ssh "$CLIP_SERVER" "chmod 644 '${CLIP_DIR}/${SLUG}'/*"
-
-# Generate thumbnail on server (first frame)
-ssh "$CLIP_SERVER" "ffmpeg -y -i '${CLIP_DIR}/${SLUG}/${FILENAME}' -vframes 1 -q:v 2 '${CLIP_DIR}/${SLUG}/thumb.jpg' 2>/dev/null"
 
 # Copy link to clipboard
 printf '%s' "$URL" | xclip -selection clipboard
 
 # Notify
 $NOTIFY_CMD "Clip uploaded" "$URL"
+
+log "done slug=$SLUG url=$URL mode=$UPLOAD_MODE"

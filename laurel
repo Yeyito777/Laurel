@@ -185,7 +185,10 @@ cmd_setup() {
     echo ""
 
     if [ "$server_choice" = "2" ]; then
-        # ── Friend's server: just ask for domain ──
+        # ── Friend's server: HTTP upload ──
+        upload_mode="http"
+        clip_server=""
+
         ask "server URL (e.g. clips.example.com):"
         read -r clip_domain
 
@@ -194,26 +197,37 @@ cmd_setup() {
             exit 1
         fi
 
-        # Use domain as SSH host too — the server admin should have given SSH access
-        clip_server="$clip_domain"
-
-        dim "  note: you need SSH access to upload clips."
-        dim "  ask the server admin to set up an account for you."
         echo ""
 
-        # Test SSH connection
-        printf "  testing SSH to ${BOLD}%s${RESET}..." "$clip_server"
-        if ssh -o ConnectTimeout=5 -o BatchMode=yes "$clip_server" "echo ok" </dev/null >/dev/null 2>&1; then
-            printf " ${GREEN}connected${RESET}\n"
+        # Generate ident now so we can register
+        mkdir -p "$CONF_DIR"
+        if [ ! -f "$IDENT_FILE" ]; then
+            od -An -tx1 -N16 /dev/urandom | tr -d ' \n' > "$IDENT_FILE"
+        fi
+        _ident="$(cat "$IDENT_FILE")"
+
+        # Register with the server
+        printf "  registering with ${BOLD}%s${RESET}..." "$clip_domain"
+        _reg_resp=$(curl -sf -X POST "https://${clip_domain}/api/register" \
+            -H "Content-Type: application/json" \
+            -d "{\"ident\":\"${_ident}\"}" 2>&1)
+        _reg_exit=$?
+
+        if [ $_reg_exit -eq 0 ]; then
+            printf " ${GREEN}registered${RESET}\n"
+            ok "$clip_domain"
         else
             printf " ${RED}failed${RESET}\n"
-            dim "  you can set up SSH access later — clips won't upload until then."
+            err "could not reach $clip_domain — check the URL"
+            dim "  error: $_reg_resp"
             ask "continue anyway? [y/N]:"
             read -r cont
             case "$cont" in y|Y) ;; *) exit 1 ;; esac
         fi
     else
-        # ── Own server: SSH alias + domain ──
+        # ── Own server: SSH upload ──
+        upload_mode="ssh"
+
         dim "  enter the SSH alias from your ~/.ssh/config"
         echo ""
         ask "SSH alias (e.g. my-server):"
@@ -269,6 +283,7 @@ HOTKEY_KEY=$hk_key
 HOTKEY_MOD=$hk_mod
 
 # Server
+UPLOAD_MODE=$upload_mode
 CLIP_SERVER=$clip_server
 CLIP_DIR=/srv/clips
 CLIP_DOMAIN=$clip_domain
