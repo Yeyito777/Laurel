@@ -1,0 +1,54 @@
+name: Publish to AUR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - PKGBUILD
+      - laurel.install
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm git openssh
+
+      - name: Set up AUR SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur_ed25519
+          chmod 600 ~/.ssh/aur_ed25519
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          cat > ~/.ssh/config << EOF
+          Host aur.archlinux.org
+              IdentityFile ~/.ssh/aur_ed25519
+              User aur
+          EOF
+
+      - name: Configure git
+        run: |
+          git config --global user.name "Yeyito"
+          git config --global user.email "yeyito@yeyito.dev"
+
+      - name: Clone AUR repo
+        run: git clone ssh://aur@aur.archlinux.org/laurel-git.git /tmp/aur
+
+      - name: Update AUR package
+        run: |
+          cp PKGBUILD laurel.install /tmp/aur/
+          cd /tmp/aur
+          makepkg --printsrcinfo > .SRCINFO
+          git add PKGBUILD .SRCINFO laurel.install
+          if git diff --cached --quiet; then
+            echo "No changes to publish"
+          else
+            git commit -m "Update to $(grep pkgver .SRCINFO | head -1 | awk '{print $3}')"
+            git push
+            echo "Published to AUR"
+          fi
