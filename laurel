@@ -1,0 +1,346 @@
+#!/bin/sh
+# laurel — setup wizard and status tool for Laurel
+# First run: interactive setup. After that: status overview.
+
+CONF_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/laurel"
+CONF_FILE="${CONF_DIR}/config.sh"
+IDENT_FILE="${CONF_DIR}/ident"
+SYS_CONF="/etc/laurel/config.sh"
+
+# Colors
+BOLD='\033[1m'
+DIM='\033[2m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+CYAN='\033[0;36m'
+RESET='\033[0m'
+
+say()  { printf "${BOLD}%s${RESET}\n" "$*"; }
+dim()  { printf "${DIM}%s${RESET}\n" "$*"; }
+ok()   { printf "${GREEN}✓${RESET} %s\n" "$*"; }
+err()  { printf "${RED}✗${RESET} %s\n" "$*"; }
+ask()  { printf "${CYAN}?${RESET} %s " "$1"; }
+
+# ── Status ──────────────────────────────────────────────
+
+cmd_status() {
+    echo ""
+    # Load config
+    if [ -f "$CONF_FILE" ]; then
+        . "$CONF_FILE"
+    elif [ -f "$SYS_CONF" ]; then
+        . "$SYS_CONF"
+    fi
+
+    # Service state — check actual processes (systemctl can be stale with forking services)
+    if pgrep -x gpu-screen-rec >/dev/null 2>&1 || systemctl --user is-active laurel-replay >/dev/null 2>&1; then
+        HOTKEY_KEY="${HOTKEY_KEY:-g}"
+        HOTKEY_MOD="${HOTKEY_MOD:-super}"
+        CAPTURE="${CAPTURE_TARGET:-HDMI-1}"
+        DOMAIN="${CLIP_DOMAIN:-not set}"
+        if [ "$HOTKEY_MOD" = "none" ]; then
+            HOTKEY_DISP="$HOTKEY_KEY"
+        else
+            HOTKEY_DISP="${HOTKEY_MOD}+${HOTKEY_KEY}"
+        fi
+        printf "  ${GREEN}●${RESET} ${BOLD}laurel${RESET} — active ${DIM}(${HOTKEY_DISP}, ${CAPTURE}, ${DOMAIN})${RESET}\n"
+    else
+        printf "  ${RED}●${RESET} ${BOLD}laurel${RESET} — inactive\n"
+    fi
+
+    # Ident
+    if [ -f "$IDENT_FILE" ]; then
+        IDENT="$(cat "$IDENT_FILE")"
+        SHORT="${IDENT%????????????????}"
+        printf "    ident: ${DIM}${SHORT}...${RESET}\n"
+    fi
+
+    # Clip count (if server configured)
+    if [ -n "${CLIP_SERVER:-}" ] && [ -n "${CLIP_DOMAIN:-}" ] && [ -f "$IDENT_FILE" ]; then
+        COUNT=$(curl -sf -b "ident=$(cat "$IDENT_FILE")" "https://${CLIP_DOMAIN}/api/clips" 2>/dev/null \
+            | grep -o '"slug"' | wc -l) || COUNT="?"
+        printf "    clips: ${DIM}${COUNT}${RESET}\n"
+    fi
+
+    echo ""
+    dim "  laurel setup    re-run setup wizard"
+    dim "  laurel start    start the replay buffer"
+    dim "  laurel stop     stop the replay buffer"
+    dim "  laurel pair     show pairing URL for browser"
+    echo ""
+}
+
+# ── Pair ────────────────────────────────────────────────
+
+cmd_pair() {
+    if [ ! -f "$CONF_FILE" ]; then
+        err "not configured — run: laurel setup"
+        exit 1
+    fi
+    . "$CONF_FILE"
+    if [ ! -f "$IDENT_FILE" ]; then
+        err "no ident yet — save a clip first, or run: laurel setup"
+        exit 1
+    fi
+    if [ -z "${CLIP_DOMAIN:-}" ]; then
+        err "CLIP_DOMAIN not set in config"
+        exit 1
+    fi
+    IDENT="$(cat "$IDENT_FILE")"
+    URL="https://${CLIP_DOMAIN}/?pair=${IDENT}"
+    echo ""
+    say "Open this URL in your browser to view your clips:"
+    echo ""
+    printf "  ${CYAN}%s${RESET}\n" "$URL"
+    echo ""
+    # Try to copy to clipboard
+    if command -v xclip >/dev/null 2>&1; then
+        printf '%s' "$URL" | xclip -selection clipboard 2>/dev/null && dim "  (copied to clipboard)"
+    fi
+    echo ""
+}
+
+# ── Setup wizard ────────────────────────────────────────
+
+cmd_setup() {
+    echo ""
+    say "laurel setup"
+    dim "Let's get your clip system running."
+    echo ""
+
+    # ── Step 1: Monitor ──
+    say "1. Monitor"
+    echo ""
+
+    MONITORS=$(gpu-screen-recorder --list-capture-options 2>/dev/null \
+        | grep -E '^[A-Za-z].*\|[0-9]+x[0-9]+' \
+        | grep -v '^/' \
+        | head -10)
+
+    if [ -z "$MONITORS" ]; then
+        err "no monitors detected by gpu-screen-recorder"
+        err "make sure your GPU supports hardware encoding (VA-API or NVENC)"
+        exit 1
+    fi
+
+    # Parse monitor names
+    i=1
+    DEFAULT_MON=""
+    for line in $MONITORS; do
+        name="${line%%|*}"
+        res="${line#*|}"
+        printf "  ${BOLD}%d)${RESET} %s ${DIM}(%s)${RESET}\n" "$i" "$name" "$res"
+        [ -z "$DEFAULT_MON" ] && DEFAULT_MON="$name"
+        eval "MON_$i=$name"
+        i=$((i + 1))
+    done
+    MON_COUNT=$((i - 1))
+
+    echo ""
+    ask "monitor [1]:"
+    read -r mon_choice
+    mon_choice="${mon_choice:-1}"
+
+    # Validate
+    eval "CHOSEN_MON=\${MON_${mon_choice}:-}"
+    if [ -z "$CHOSEN_MON" ]; then
+        err "invalid choice"
+        exit 1
+    fi
+    ok "$CHOSEN_MON"
+    echo ""
+
+    # ── Step 2: Hotkey ──
+    say "2. Hotkey"
+    echo ""
+    dim "  key name is passed to X11 XStringToKeysym (e.g. F9, F8, g, Print)"
+    echo ""
+
+    ask "key [F9]:"
+    read -r hk_key
+    hk_key="${hk_key:-F9}"
+
+    ask "modifier (none/super/alt/ctrl/shift) [none]:"
+    read -r hk_mod
+    hk_mod="${hk_mod:-none}"
+
+    if [ "$hk_mod" = "none" ]; then
+        ok "$hk_key (no modifier)"
+    else
+        ok "${hk_mod}+${hk_key}"
+    fi
+    echo ""
+
+    # ── Step 3: Server ──
+    say "3. Clip server"
+    echo ""
+    dim "  you need a server running laurel-server with SSH access."
+    dim "  set up an SSH alias in ~/.ssh/config first."
+    echo ""
+
+    ask "SSH alias (e.g. my-server):"
+    read -r clip_server
+
+    if [ -z "$clip_server" ]; then
+        err "server is required"
+        exit 1
+    fi
+
+    # Test SSH connection
+    printf "  testing SSH to ${BOLD}%s${RESET}..." "$clip_server"
+    if ssh -o ConnectTimeout=5 -o BatchMode=yes "$clip_server" "echo ok" </dev/null >/dev/null 2>&1; then
+        printf " ${GREEN}connected${RESET}\n"
+    else
+        printf " ${RED}failed${RESET}\n"
+        err "can't connect to $clip_server — check your SSH config"
+        ask "continue anyway? [y/N]:"
+        read -r cont
+        case "$cont" in y|Y) ;; *) exit 1 ;; esac
+    fi
+
+    echo ""
+    ask "clip domain (e.g. clips.example.com):"
+    read -r clip_domain
+
+    if [ -z "$clip_domain" ]; then
+        err "domain is required"
+        exit 1
+    fi
+    ok "$clip_domain"
+    echo ""
+
+    # ── Step 4: Write config ──
+    say "4. Saving config"
+    echo ""
+
+    mkdir -p "$CONF_DIR"
+    cat > "$CONF_FILE" << EOF
+#!/bin/sh
+# Laurel configuration — generated by laurel setup
+
+# Recording
+CAPTURE_TARGET=$CHOSEN_MON
+BUFFER_DURATION=60
+FPS=60
+CODEC=auto
+AUDIO_SOURCE=default_output
+
+# Hotkey
+HOTKEY_KEY=$hk_key
+HOTKEY_MOD=$hk_mod
+
+# Server
+CLIP_SERVER=$clip_server
+CLIP_DIR=/srv/clips
+CLIP_DOMAIN=$clip_domain
+EOF
+
+    ok "wrote $CONF_FILE"
+
+    # ── Step 5: Generate ident ──
+    if [ ! -f "$IDENT_FILE" ]; then
+        od -An -tx1 -N16 /dev/urandom | tr -d ' \n' > "$IDENT_FILE"
+        ok "generated ident token"
+    else
+        ok "ident token exists"
+    fi
+
+    # ── Step 6: Copy sound if needed ──
+    if [ ! -f "${CONF_DIR}/clip.mp3" ] && [ -f "/usr/share/laurel/clip.mp3" ]; then
+        cp /usr/share/laurel/clip.mp3 "${CONF_DIR}/clip.mp3"
+        ok "copied clip sound"
+    fi
+
+    # ── Step 7: Enable service ──
+    echo ""
+    say "5. Starting service"
+    echo ""
+
+    systemctl --user daemon-reload 2>/dev/null
+    systemctl --user enable laurel-replay >/dev/null 2>&1
+    ok "enabled laurel-replay service"
+
+    # Stop if running, then start fresh
+    _rt="${XDG_RUNTIME_DIR:-/tmp}/laurel"
+    [ -f "${_rt}/hotkey.pid" ] && kill "$(cat "${_rt}/hotkey.pid")" 2>/dev/null
+    [ -f "${_rt}/replay.pid" ] && kill "$(cat "${_rt}/replay.pid")" 2>/dev/null
+    pkill -f "gpu-screen-recorder.*laurel" 2>/dev/null
+    pkill -f "laurel-hotkey" 2>/dev/null
+    rm -f "${_rt}/hotkey.pid" "${_rt}/replay.pid"
+    systemctl --user reset-failed laurel-replay 2>/dev/null
+    sleep 1
+    systemctl --user start laurel-replay 2>/dev/null
+
+    sleep 2
+    if systemctl --user is-active laurel-replay >/dev/null 2>&1; then
+        ok "replay buffer running"
+    else
+        err "failed to start — check: journalctl --user -u laurel-replay"
+        exit 1
+    fi
+
+    # ── Done ──
+    echo ""
+    if [ "$hk_mod" = "none" ]; then
+        HOTKEY_DISP="$hk_key"
+    else
+        HOTKEY_DISP="${hk_mod}+${hk_key}"
+    fi
+
+    printf "  ${GREEN}${BOLD}done!${RESET} press ${BOLD}%s${RESET} to save a clip.\n" "$HOTKEY_DISP"
+    printf "  your clips will appear at ${CYAN}https://%s${RESET}\n" "$clip_domain"
+    echo ""
+    dim "  run 'laurel pair' to link your browser after your first clip."
+    echo ""
+}
+
+# ── Main ────────────────────────────────────────────────
+
+case "${1:-}" in
+    setup)
+        cmd_setup
+        ;;
+    start)
+        systemctl --user start laurel-replay 2>&1
+        sleep 2
+        if systemctl --user is-active laurel-replay >/dev/null 2>&1; then
+            ok "started"
+        else
+            err "failed to start — check: journalctl --user -u laurel-replay"
+        fi
+        ;;
+    stop)
+        # Kill processes directly — systemctl stop can hang on forking services
+        LAUREL_RUNTIME="${XDG_RUNTIME_DIR:-/tmp}/laurel"
+        [ -f "${LAUREL_RUNTIME}/hotkey.pid" ] && kill "$(cat "${LAUREL_RUNTIME}/hotkey.pid")" 2>/dev/null
+        [ -f "${LAUREL_RUNTIME}/replay.pid" ] && kill "$(cat "${LAUREL_RUNTIME}/replay.pid")" 2>/dev/null
+        rm -f "${LAUREL_RUNTIME}/hotkey.pid" "${LAUREL_RUNTIME}/replay.pid"
+        pkill -f "gpu-screen-recorder.*laurel" 2>/dev/null
+        pkill -f "laurel-hotkey" 2>/dev/null
+        sleep 1
+        systemctl --user reset-failed laurel-replay 2>/dev/null
+        ok "stopped"
+        ;;
+    pair)
+        cmd_pair
+        ;;
+    -h|--help)
+        echo "usage: laurel [setup|start|stop|pair|status]"
+        ;;
+    status|"")
+        if [ ! -f "$CONF_FILE" ]; then
+            echo ""
+            printf "  ${YELLOW}${BOLD}laurel${RESET}${YELLOW} is not configured yet.${RESET}\n"
+            echo ""
+            say "  run: laurel setup"
+            echo ""
+            exit 0
+        fi
+        cmd_status
+        ;;
+    *)
+        echo "usage: laurel [setup|start|stop|pair|status]"
+        exit 1
+        ;;
+esac

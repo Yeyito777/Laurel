@@ -5,6 +5,7 @@ laurel-hotkey: laurel-hotkey.c
 	$(CC) -o $@ $< -lX11
 
 install: laurel-hotkey
+	install -Dm755 laurel $(DESTDIR)$(PREFIX)/bin/laurel
 	install -Dm755 laurel-replay $(DESTDIR)$(PREFIX)/bin/laurel-replay
 	install -Dm755 laurel-clip $(DESTDIR)$(PREFIX)/bin/laurel-clip
 	install -Dm755 laurel-hotkey $(DESTDIR)$(PREFIX)/bin/laurel-hotkey
@@ -14,6 +15,7 @@ install: laurel-hotkey
 	install -Dm644 laurel-replay.service $(DESTDIR)$(PREFIX)/lib/systemd/user/laurel-replay.service
 
 uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/laurel
 	rm -f $(DESTDIR)$(PREFIX)/bin/laurel-replay
 	rm -f $(DESTDIR)$(PREFIX)/bin/laurel-clip
 	rm -f $(DESTDIR)$(PREFIX)/bin/laurel-hotkey
