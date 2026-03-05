@@ -48,6 +48,15 @@ CLIP_SOUND=""
 [ -f "${_conf_dir}/clip.mp3" ] && CLIP_SOUND="${_conf_dir}/clip.mp3"
 [ -z "$CLIP_SOUND" ] && [ -f "/usr/share/laurel/clip.mp3" ] && CLIP_SOUND="/usr/share/laurel/clip.mp3"
 
+# Ident token — generate lazily on first clip save
+IDENT_FILE="${_conf_dir}/ident"
+if [ ! -f "$IDENT_FILE" ]; then
+    mkdir -p "$_conf_dir"
+    od -An -tx1 -N16 /dev/urandom | tr -d ' \n' > "$IDENT_FILE"
+    log "generated new ident: $(cat "$IDENT_FILE")"
+fi
+IDENT="$(cat "$IDENT_FILE")"
+
 # Play clip sound (async so it doesn't block upload)
 [ -n "$CLIP_SOUND" ] && pw-play "$CLIP_SOUND" &
 
@@ -69,6 +78,9 @@ ssh "$CLIP_SERVER" "mkdir -p '${CLIP_DIR}/${SLUG}'"
 scp -q "$CLIP_FILE" "${CLIP_SERVER}:${CLIP_DIR}/${SLUG}/${FILENAME}"
 scp -q "$TMPHTML" "${CLIP_SERVER}:${CLIP_DIR}/${SLUG}/index.html"
 rm -f "$TMPHTML"
+# Stamp ownership
+ssh "$CLIP_SERVER" "printf '%s' '${IDENT}' > '${CLIP_DIR}/${SLUG}/.owner'"
+
 ssh "$CLIP_SERVER" "chmod 644 '${CLIP_DIR}/${SLUG}'/*"
 
 # Generate thumbnail on server (first frame)
