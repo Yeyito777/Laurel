@@ -16,16 +16,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: |
-          pacman -Syu --noconfirm git openssh
+        run: pacman -Syu --noconfirm git openssh
 
       - name: Set up AUR SSH key
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur_ed25519
-          chmod 600 ~/.ssh/aur_ed25519
-          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host aur.archlinux.org\n  IdentityFile ~/.ssh/aur_ed25519\n  User aur\n  StrictHostKeyChecking accept-new\n' > ~/.ssh/config
+          mkdir -p /root/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > /root/.ssh/aur_ed25519
+          chmod 600 /root/.ssh/aur_ed25519
 
       - name: Configure git
         run: |
@@ -33,9 +30,13 @@ jobs:
           git config --global user.email "yeyito@yeyito.dev"
 
       - name: Clone AUR repo
+        env:
+          GIT_SSH_COMMAND: "ssh -i /root/.ssh/aur_ed25519 -o StrictHostKeyChecking=no"
         run: git clone ssh://aur@aur.archlinux.org/laurel-git.git /tmp/aur
 
       - name: Update AUR package
+        env:
+          GIT_SSH_COMMAND: "ssh -i /root/.ssh/aur_ed25519 -o StrictHostKeyChecking=no"
         run: |
           cp PKGBUILD laurel.install /tmp/aur/
           cd /tmp/aur
